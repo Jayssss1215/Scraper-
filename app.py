@@ -1,3 +1,4 @@
+import base64
 from pathlib import Path
 
 import pandas as pd
@@ -26,6 +27,8 @@ h1{font-size:clamp(2.4rem,5vw,4.8rem)!important;line-height:.9!important;max-wid
 .hero-rule{height:1px;background:linear-gradient(90deg,var(--teal),transparent);margin:1.4rem 0 2rem}
 .agent-card,.skill-card,.locked-card,.brief{border:1px solid var(--line);background:linear-gradient(150deg,rgba(16,34,43,.92),rgba(8,20,27,.92));padding:1.25rem;border-radius:5px;position:relative;overflow:hidden}
 .agent-card:after{content:'01';position:absolute;right:14px;top:3px;font:700 4rem 'Chakra Petch';color:rgba(66,245,212,.06)}
+.mascot-stage{height:170px;display:flex;align-items:center;justify-content:center;margin:-.35rem 0 .4rem;background:radial-gradient(circle,rgba(66,245,212,.12),transparent 61%)}
+.mascot-stage img{width:94%;height:100%;object-fit:contain;image-rendering:pixelated;transform:scale(1.72);filter:drop-shadow(0 12px 18px rgba(0,0,0,.42))}
 .badge{display:inline-block;border:1px solid #37606e;color:var(--teal);font:600 .7rem 'Chakra Petch';padding:.25rem .5rem;letter-spacing:.12em;text-transform:uppercase}
 .skill-card{min-height:170px;margin-bottom:.75rem;transition:border-color .2s ease,transform .2s ease;background:linear-gradient(145deg,rgba(14,39,46,.98),rgba(8,23,30,.96))}
 .skill-card:hover{border-color:#3f7b84;transform:translateY(-2px)}.skill-card b{font:600 1.02rem 'Chakra Petch'}
@@ -68,6 +71,9 @@ saved_leads = [row_to_lead(row) for row in saved_rows]
 xp = sum(lead_xp(lead) for lead in saved_leads)
 level = 1 + xp // 250
 progress = xp % 250
+equipped_skill = st.session_state.setdefault("equipped_skill", "Lead Hunter")
+mascot_path = Path("assets/sugar-glider-agent.png")
+mascot_data = base64.b64encode(mascot_path.read_bytes()).decode("ascii")
 
 st.markdown('<div class="hero-kicker">Jay’s AI · Local lead intelligence</div>', unsafe_allow_html=True)
 st.title("MISSION CONTROL")
@@ -77,23 +83,32 @@ st.markdown('<div class="hero-rule"></div>', unsafe_allow_html=True)
 if page == "New Mission":
     left, right = st.columns([1, 1.75], gap="large")
     with left:
-        st.markdown(f'''<div class="agent-card"><span class="badge">LEVEL {level}</span><h2>Jay's AI</h2><p>1 skill online · 1 blueprint mapped</p><h3>◈ Lead Hunter</h3><div class="xp-track"><div class="xp-fill" style="width:{progress/2.5}%"></div></div><small>{progress} / 250 XP to next level · {xp} total XP</small></div>''', unsafe_allow_html=True)
+        st.markdown(f'''<div class="agent-card"><span class="badge">LEVEL {level}</span><div class="mascot-stage"><img src="data:image/png;base64,{mascot_data}" alt="Pixel-art sugar glider AI agent"></div><h2>Jay's AI</h2><p>Equipped skill</p><h3>◈ {equipped_skill}</h3><div class="xp-track"><div class="xp-fill" style="width:{progress/2.5}%"></div></div><small>{progress} / 250 XP to next level · {xp} total XP</small></div>''', unsafe_allow_html=True)
         st.markdown("#### Skill rack")
         c1, c2 = st.columns(2)
-        c1.markdown('<div class="skill-card"><span class="skill-id">01</span><span class="badge">ONLINE</span><p><b>Lead Hunter</b></p><p>Find local businesses for any offer, then review, save and export them.</p><span class="capability">GENERAL DISCOVERY</span></div>', unsafe_allow_html=True)
-        c2.markdown('<div class="skill-card blueprint"><span class="skill-id">02</span><span class="badge">BLUEPRINT</span><p><b>Website Gap Hunter</b></p><p>Find active, contactable businesses with no independent website or a weak web presence.</p><span class="capability">VISUAL ONLY · ENGINE NEXT</span></div>', unsafe_allow_html=True)
+        lead_active = equipped_skill == "Lead Hunter"
+        gap_active = equipped_skill == "Website Gap Hunter"
+        c1.markdown(f'<div class="skill-card"><span class="skill-id">01</span><span class="badge">{"EQUIPPED" if lead_active else "READY"}</span><p><b>Lead Hunter</b></p><p>Find local businesses for any offer, then review, save and export them.</p><span class="capability">GENERAL DISCOVERY</span></div>', unsafe_allow_html=True)
+        if c1.button("Equipped" if lead_active else "Equip Lead Hunter", disabled=lead_active, use_container_width=True):
+            st.session_state["equipped_skill"] = "Lead Hunter"
+            st.rerun()
+        c2.markdown(f'<div class="skill-card blueprint"><span class="skill-id">02</span><span class="badge">{"EQUIPPED" if gap_active else "BLUEPRINT"}</span><p><b>Website Gap Hunter</b></p><p>Find active, contactable businesses with no independent website or a weak web presence.</p><span class="capability">VISUAL MODE · ENGINE NEXT</span></div>', unsafe_allow_html=True)
+        if c2.button("Equipped" if gap_active else "Equip Gap Hunter", disabled=gap_active, use_container_width=True):
+            st.session_state["equipped_skill"] = "Website Gap Hunter"
+            st.rerun()
         st.markdown('<div class="locked-card"><span class="badge">LOCKED</span><p><b>Future skill slot</b></p><small>Coming later · no controls enabled</small></div>', unsafe_allow_html=True)
     with right:
-        st.subheader("New Mission")
-        st.caption("The Training Ground uses bundled sample records. Try “cafe” and “Fitzroy”.")
+        gap_mode = equipped_skill == "Website Gap Hunter"
+        st.subheader("New Website Gap Mission" if gap_mode else "New Mission")
+        st.caption("The Website Gap engine is the next build step. You can equip and preview it now." if gap_mode else "The Training Ground uses bundled sample records. Try “cafe” and “Fitzroy”.")
         with st.form("mission"):
             business_type = st.text_input("Business type", value="cafe", placeholder="e.g. cafe")
             location = st.text_input("Suburb, city or postcode", value="Fitzroy", placeholder="e.g. Fitzroy")
             result_limit = st.slider("Maximum leads", 1, settings.max_results, min(10, settings.max_results))
             rule = st.text_area("Optional targeting rule", placeholder="Use only when judgement is needed, e.g. independent cafes suitable for a website redesign")
             ai_ready = settings.ai_enabled and bool(settings.openrouter_key)
-            st.markdown(f'''<div class="brief"><span class="badge">MISSION BRIEF</span><p><b>Provider:</b> {settings.lead_provider.title()} · <b>Provider calls:</b> up to 1 of {settings.max_provider_requests}<br><b>Scout Brain:</b> {'online' if ai_ready else 'offline — deterministic filters only'} · <b>AI calls:</b> up to {min(result_limit, settings.max_llm_classifications) if ai_ready and rule else 0}</p></div>''', unsafe_allow_html=True)
-            submitted = st.form_submit_button("Start Mission  →", type="primary", use_container_width=True)
+            st.markdown(f'''<div class="brief"><span class="badge">MISSION BRIEF</span><p><b>Equipped:</b> {equipped_skill}<br><b>Provider:</b> {settings.lead_provider.title()} · <b>Provider calls:</b> up to {0 if gap_mode else 1} of {settings.max_provider_requests}<br><b>Scout Brain:</b> {'online' if ai_ready else 'offline — deterministic filters only'} · <b>AI calls:</b> up to {min(result_limit, settings.max_llm_classifications) if ai_ready and rule and not gap_mode else 0}</p></div>''', unsafe_allow_html=True)
+            submitted = st.form_submit_button("Engine coming next" if gap_mode else "Start Mission  →", type="primary", use_container_width=True, disabled=gap_mode)
         if submitted:
             try:
                 request = MissionRequest(business_type=business_type, location=location, result_limit=result_limit, targeting_rule=rule)
