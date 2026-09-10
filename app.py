@@ -1,4 +1,6 @@
 import base64
+import json
+import subprocess
 from pathlib import Path
 
 import pandas as pd
@@ -11,6 +13,8 @@ from src.missions import run_mission
 from src.models import Lead, MissionRequest
 from src.providers.base import ProviderError
 from src.scoring import lead_xp
+from src.security.github import ForgeError, clone_to_quarantine, search_repositories
+from src.security.scanner import scan_repository
 from src.services.deduplicate import lead_key
 
 st.set_page_config(page_title="Jay's AI Control Room", page_icon="◈", layout="wide")
@@ -38,6 +42,8 @@ h1{font-size:clamp(2.4rem,5vw,4.8rem)!important;line-height:.9!important;max-wid
 .locked-card{opacity:.55;min-height:122px}.locked-card b{font-family:'Chakra Petch'}
 .xp-track{height:8px;background:#172934;margin:.75rem 0}.xp-fill{height:100%;background:linear-gradient(90deg,var(--teal),var(--blue));box-shadow:0 0 18px rgba(66,245,212,.45)}
 .brief{border-left:3px solid var(--blue);margin:.5rem 0 1.5rem}.missing{color:#f1b667}.stButton>button,.stDownloadButton>button{border-radius:3px!important;border:1px solid #3b6b75!important;font-family:'Chakra Petch'!important;font-weight:600!important}
+.forge-step{border:1px solid var(--line);padding:1rem;background:#0b1820;margin-bottom:.65rem}.forge-step b{font-family:'Chakra Petch';color:var(--teal)}
+.verdict{padding:1rem;border:1px solid #34515c;background:linear-gradient(90deg,rgba(66,245,212,.08),transparent);margin:1rem 0}.verdict strong{font:600 1.15rem 'Chakra Petch'}
 div[data-testid="stDataFrame"]{border:1px solid var(--line)}
 @media (prefers-reduced-motion:no-preference){.block-container{animation:enter .55s ease both}@keyframes enter{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}}
 </style>
@@ -61,7 +67,7 @@ def row_to_lead(row):
 
 with st.sidebar:
     st.markdown("### ◈ CONTROL ROOM")
-    page = st.radio("Station", ["New Mission", "Mission Results", "Lead Vault", "Settings / Gear"], label_visibility="collapsed")
+    page = st.radio("Station", ["New Mission", "Mission Results", "Lead Vault", "Skill Forge", "Settings / Gear"], label_visibility="collapsed")
     st.divider()
     st.caption("LOCAL SYSTEM · HUMAN REVIEW REQUIRED")
     st.caption("No outreach is performed by this app.")
@@ -179,6 +185,74 @@ elif page == "Lead Vault":
                 db.delete_saved(row["id"]); st.rerun()
     if saved_leads:
         st.download_button("Export Vault to CSV", leads_csv(saved_leads), "lead-vault.csv", "text/csv")
+
+elif page == "Skill Forge":
+    st.markdown('<div class="hero-kicker">QUARANTINE BAY · ZERO-TRUST INTAKE</div>', unsafe_allow_html=True)
+    st.subheader("Skill Forge")
+    st.caption("Discover third-party code, inspect it without running it, then decide whether it is safe and licensed enough to adapt.")
+    st.markdown('''<div class="forge-step"><b>01 · DISCOVER</b><br><small>Search public Python repositories by purpose.</small></div><div class="forge-step"><b>02 · QUARANTINE</b><br><small>Download Git objects only. No checkout, install hooks, imports or execution.</small></div><div class="forge-step"><b>03 · INSPECT</b><br><small>Scan source, dependencies, licence, secrets, command execution and network access.</small></div><div class="forge-step"><b>04 · HUMAN GATE</b><br><small>You approve adaptation. Approval never executes the candidate.</small></div>''', unsafe_allow_html=True)
+
+    search_tab, scan_tab = st.tabs(["Search GitHub", "Import & scan"])
+    with search_tab:
+        query = st.text_input("What should the skill do?", value="local business lead discovery", placeholder="e.g. public business website finder")
+        if st.button("Search public repositories", type="primary"):
+            try:
+                with st.spinner("Searching GitHub's public repository index…"):
+                    st.session_state["forge_candidates"] = search_repositories(query)
+            except ForgeError as exc:
+                st.error(str(exc))
+        for candidate in st.session_state.get("forge_candidates", []):
+            with st.container(border=True):
+                st.markdown(candidate["name"])
+                st.caption(candidate["description"])
+                a, b, c = st.columns(3)
+                a.metric("Stars", candidate["stars"])
+                b.metric("Licence", candidate["license"])
+                c.metric("Updated", candidate["updated"][:10])
+                st.link_button("Inspect on GitHub", candidate["url"])
+                st.code(candidate["url"], language=None)
+        if not st.session_state.get("forge_candidates"):
+            st.info("Search results are candidates, not recommendations. Popularity does not prove safety or legal suitability.")
+
+    with scan_tab:
+        repo_url = st.text_input("Public GitHub repository URL", placeholder="https://github.com/owner/repository")
+        st.caption("Only github.com HTTPS repository URLs are accepted. Private repositories and embedded credentials are rejected.")
+        if st.button("Quarantine and scan", type="primary", disabled=not repo_url.strip()):
+            try:
+                with st.spinner("Downloading without checkout, then scanning static source…"):
+                    quarantine_path, revision = clone_to_quarantine(repo_url)
+                    report = scan_repository(quarantine_path, revision)
+                st.session_state["forge_report"] = report.as_dict()
+                st.session_state["forge_repo_url"] = repo_url.strip()
+                st.session_state["forge_quarantine_path"] = str(quarantine_path)
+            except (ForgeError, OSError, subprocess.SubprocessError) as exc:
+                st.error(str(exc) if isinstance(exc, ForgeError) else "The candidate could not be scanned safely.")
+
+        report = st.session_state.get("forge_report")
+        if report:
+            st.markdown(f'<div class="verdict"><span class="badge">SCAN VERDICT</span><br><strong>{report["verdict"]}</strong><br><small>Revision {report["revision"][:12]} · {report["files_scanned"]} text files · {report["bytes_scanned"]:,} bytes inspected</small></div>', unsafe_allow_html=True)
+            r1, r2, r3, r4 = st.columns(4)
+            r1.metric("Critical", report["counts"]["critical"])
+            r2.metric("High", report["counts"]["high"])
+            r3.metric("Medium", report["counts"]["medium"])
+            r4.metric("Licence", report["license_status"])
+            if report["findings"]:
+                st.dataframe(pd.DataFrame(report["findings"]), use_container_width=True, hide_index=True)
+            else:
+                st.success("No rule-based findings were detected. Manual code review is still required.")
+            st.warning("A clean static scan is not proof of safety. Dependencies, runtime behaviour, provider terms and data handling still need manual review.")
+            acknowledged = st.checkbox("I understand approval does not execute or equip this code.")
+            blocked = report["verdict"] == "Blocked"
+            if st.button("Approve for manual adaptation", disabled=blocked or not acknowledged):
+                approval = {
+                    "repository": st.session_state["forge_repo_url"],
+                    "revision": report["revision"],
+                    "verdict": report["verdict"],
+                    "status": "approved_for_manual_adaptation",
+                }
+                approval_path = Path(st.session_state["forge_quarantine_path"]) / "control-room-approval.json"
+                approval_path.write_text(json.dumps(approval, indent=2), encoding="utf-8")
+                st.success("Candidate approved for manual adaptation. Nothing was installed or executed.")
 
 else:
     st.subheader("Settings / Gear")

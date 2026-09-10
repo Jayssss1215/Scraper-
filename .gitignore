@@ -5,7 +5,7 @@ __pycache__/
 *.py[cod]
 data/*.db
 data/*.db-*
+data/quarantine/
 exports/*.csv
 *.log
 .DS_Store
-

@@ -34,8 +34,15 @@ source .venv/bin/activate && streamlit run app.py
 - Confirmed removal from the Vault and formula-injection-safe CSV export
 - Optional Google Places API (New) text search with a minimal field mask and actionable error states
 - Optional OpenRouter classification using structured JSON, uncertainty, per-mission caps, and a local cache
+- Skill Forge for public GitHub discovery, non-executing quarantine scans, licence and risk findings, and explicit human approval
 
 XP is deterministic: a unique saved lead with a business name and address earns 10 XP, plus 5 if it has a phone or website. Saving the same canonical lead again does not create another record or award duplicate XP. XP has no monetary value.
+
+## Skill Forge safety model
+
+Skill Forge accepts only public `https://github.com/owner/repository` URLs. It creates a bare, shallow, no-checkout quarantine clone with Git hooks disabled, then inspects bounded text content without importing, installing, or executing candidate code. The scanner flags credential access, embedded secret patterns, destructive operations, shell and dynamic execution, unsafe deserialization, browser automation, network and environment access, install hooks, symlinks, large repositories, unpinned requirements, and missing licence files.
+
+Approval only writes a local `approved_for_manual_adaptation` record inside the ignored quarantine folder. It does not install or equip the candidate. A clean scan is not proof of safety: a human must still review dependencies, runtime behaviour, provider terms and data handling before writing a narrow `LeadProvider` adapter.
 
 ## Settings and local data
 
