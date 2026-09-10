@@ -24,9 +24,14 @@ h1{font-size:clamp(2.4rem,5vw,4.8rem)!important;line-height:.9!important;max-wid
 [data-testid="stMetric"]{background:linear-gradient(145deg,rgba(18,39,49,.95),rgba(10,24,31,.95));border:1px solid var(--line);padding:1rem;border-radius:4px;box-shadow:inset 3px 0 var(--teal)}
 .hero-kicker{font:600 .72rem 'Chakra Petch';letter-spacing:.22em;color:var(--teal);text-transform:uppercase;margin-top:1rem}
 .hero-rule{height:1px;background:linear-gradient(90deg,var(--teal),transparent);margin:1.4rem 0 2rem}
-.agent-card,.locked-card,.brief{border:1px solid var(--line);background:linear-gradient(150deg,rgba(16,34,43,.92),rgba(8,20,27,.92));padding:1.25rem;border-radius:5px;position:relative;overflow:hidden}
+.agent-card,.skill-card,.locked-card,.brief{border:1px solid var(--line);background:linear-gradient(150deg,rgba(16,34,43,.92),rgba(8,20,27,.92));padding:1.25rem;border-radius:5px;position:relative;overflow:hidden}
 .agent-card:after{content:'01';position:absolute;right:14px;top:3px;font:700 4rem 'Chakra Petch';color:rgba(66,245,212,.06)}
 .badge{display:inline-block;border:1px solid #37606e;color:var(--teal);font:600 .7rem 'Chakra Petch';padding:.25rem .5rem;letter-spacing:.12em;text-transform:uppercase}
+.skill-card{min-height:170px;margin-bottom:.75rem;transition:border-color .2s ease,transform .2s ease;background:linear-gradient(145deg,rgba(14,39,46,.98),rgba(8,23,30,.96))}
+.skill-card:hover{border-color:#3f7b84;transform:translateY(-2px)}.skill-card b{font:600 1.02rem 'Chakra Petch'}
+.skill-card p{font-size:.79rem;color:var(--muted);line-height:1.55;margin:.65rem 0}.skill-card .skill-id{position:absolute;right:10px;top:6px;font:700 2.8rem 'Chakra Petch';color:rgba(97,167,255,.07)}
+.blueprint{border-color:#305471;background:linear-gradient(145deg,rgba(16,38,55,.98),rgba(8,21,31,.96))}.blueprint .badge{color:var(--blue);border-color:#385d78}
+.capability{font:600 .64rem 'Chakra Petch';letter-spacing:.08em;color:#bdd0d6;text-transform:uppercase}
 .locked-card{opacity:.55;min-height:122px}.locked-card b{font-family:'Chakra Petch'}
 .xp-track{height:8px;background:#172934;margin:.75rem 0}.xp-fill{height:100%;background:linear-gradient(90deg,var(--teal),var(--blue));box-shadow:0 0 18px rgba(66,245,212,.45)}
 .brief{border-left:3px solid var(--blue);margin:.5rem 0 1.5rem}.missing{color:#f1b667}.stButton>button,.stDownloadButton>button{border-radius:3px!important;border:1px solid #3b6b75!important;font-family:'Chakra Petch'!important;font-weight:600!important}
@@ -72,11 +77,12 @@ st.markdown('<div class="hero-rule"></div>', unsafe_allow_html=True)
 if page == "New Mission":
     left, right = st.columns([1, 1.75], gap="large")
     with left:
-        st.markdown(f'''<div class="agent-card"><span class="badge">LEVEL {level}</span><h2>Jay's AI</h2><p>Equipped skill</p><h3>◈ Lead Hunter</h3><div class="xp-track"><div class="xp-fill" style="width:{progress/2.5}%"></div></div><small>{progress} / 250 XP to next level · {xp} total XP</small></div>''', unsafe_allow_html=True)
+        st.markdown(f'''<div class="agent-card"><span class="badge">LEVEL {level}</span><h2>Jay's AI</h2><p>1 skill online · 1 blueprint mapped</p><h3>◈ Lead Hunter</h3><div class="xp-track"><div class="xp-fill" style="width:{progress/2.5}%"></div></div><small>{progress} / 250 XP to next level · {xp} total XP</small></div>''', unsafe_allow_html=True)
         st.markdown("#### Skill rack")
         c1, c2 = st.columns(2)
-        c1.markdown('<div class="locked-card"><span class="badge">LOCKED</span><p><b>Signal Scout</b></p><small>Coming later</small></div>', unsafe_allow_html=True)
-        c2.markdown('<div class="locked-card"><span class="badge">LOCKED</span><p><b>Outreach Wing</b></p><small>Coming later</small></div>', unsafe_allow_html=True)
+        c1.markdown('<div class="skill-card"><span class="skill-id">01</span><span class="badge">ONLINE</span><p><b>Lead Hunter</b></p><p>Find local businesses for any offer, then review, save and export them.</p><span class="capability">GENERAL DISCOVERY</span></div>', unsafe_allow_html=True)
+        c2.markdown('<div class="skill-card blueprint"><span class="skill-id">02</span><span class="badge">BLUEPRINT</span><p><b>Website Gap Hunter</b></p><p>Find active, contactable businesses with no independent website or a weak web presence.</p><span class="capability">VISUAL ONLY · ENGINE NEXT</span></div>', unsafe_allow_html=True)
+        st.markdown('<div class="locked-card"><span class="badge">LOCKED</span><p><b>Future skill slot</b></p><small>Coming later · no controls enabled</small></div>', unsafe_allow_html=True)
     with right:
         st.subheader("New Mission")
         st.caption("The Training Ground uses bundled sample records. Try “cafe” and “Fitzroy”.")
@@ -168,4 +174,3 @@ else:
     st.markdown(f'''<div class="brief"><b>Mission limits</b><br>Leads: {settings.max_results} · Provider requests: {settings.max_provider_requests} · AI classifications: {settings.max_llm_classifications}<br><br><b>Local storage</b><br>Database: {settings.database_path}<br>Exports are downloaded by your browser. Keys stay in your local <code>.env</code> file and are never displayed.</div>''', unsafe_allow_html=True)
     if settings.ai_enabled and not settings.openrouter_key:
         st.warning("AI classification is enabled but no OpenRouter key is configured. Missions will continue with deterministic filters only.")
-
