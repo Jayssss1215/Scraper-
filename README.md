@@ -1,6 +1,6 @@
 # Jay's AI Control Room
 
-A local-first Streamlit dashboard for finding and reviewing public local-business leads. V1 ships with a free Training Ground fixture, an optional authorised Google Places API adapter, local SQLite storage, safe CSV exports, and an optional OpenRouter-powered classifier.
+A local-first Streamlit dashboard for finding and reviewing public local-business leads. V1 ships with a free Training Ground fixture, a $0 Melbourne florist prototype powered by OpenStreetMap, an optional authorised Google Places API adapter, local SQLite storage, safe CSV exports, and an optional OpenRouter-powered classifier.
 
 The app never performs outreach. It never invents missing facts: missing values are shown as **Not available**.
 
@@ -35,6 +35,7 @@ source .venv/bin/activate && streamlit run app.py
 - Optional Google Places API (New) text search with a minimal field mask and actionable error states
 - Optional OpenRouter classification using structured JSON, uncertainty, per-mission caps, and a local cache
 - Skill Forge for public GitHub discovery, non-executing quarantine scans, licence and risk findings, and explicit human approval
+- Website Gap Hunter for small-batch Melbourne florist discovery through one free OpenStreetMap Overpass request
 
 XP is deterministic: a unique saved lead with a business name and address earns 10 XP, plus 5 if it has a phone or website. Saving the same canonical lead again does not create another record or award duplicate XP. XP has no monetary value.
 
@@ -71,7 +72,11 @@ GOOGLE_MAPS_API_KEY=your_key_here
 
 This project calls the authorised Places API and does not scrape Google Maps pages. Requested fields can affect billing, and costs change; review the live [pricing](https://developers.google.com/maps/billing-and-pricing/pricing), [Places usage and billing](https://developers.google.com/maps/documentation/places/web-service/usage-and-billing), and [API-key security guidance](https://developers.google.com/maps/api-security-best-practices) before use.
 
-OpenStreetMap's public Nominatim service is not used. Its [usage policy](https://operations.osmfoundation.org/policies/nominatim/) discourages systematic bulk collection and imposes strict requirements.
+## $0 Melbourne florist prototype
+
+Equip **Website Gap Hunter**, enter `florist` and `Melbourne`, then run the mission. The prototype searches central and inner Melbourne with one small request to a public OpenStreetMap Overpass server, puts records without a website first, and stores the OpenStreetMap element link as its source. It does not use Nominatim, Google, OpenRouter, a browser bot, or a paid API.
+
+Public Overpass servers are shared community infrastructure and can be slow or temporarily unavailable. Keep missions small, do not schedule repeated bulk collection, and preserve OpenStreetMap attribution when using the data. A missing website tag means only “not listed in OpenStreetMap”; manually verify each promising business before outreach.
 
 ## Optional Scout Brain
 

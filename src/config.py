@@ -1,6 +1,7 @@
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 from dotenv import load_dotenv
 
@@ -31,9 +32,9 @@ class Settings:
     request_timeout: int = _integer("REQUEST_TIMEOUT_SECONDS", 20)
     database_path: Path = Path(os.getenv("DATABASE_PATH", "data/leads.db"))
 
-    def validate(self) -> None:
-        if self.lead_provider not in {"fixture", "google"}:
-            raise ValueError("LEAD_PROVIDER must be 'fixture' or 'google'")
-        if self.lead_provider == "google" and not self.google_key:
+    def validate(self, provider: Optional[str] = None) -> None:
+        selected = provider or self.lead_provider
+        if selected not in {"fixture", "google", "osm"}:
+            raise ValueError("LEAD_PROVIDER must be 'fixture', 'google', or 'osm'")
+        if selected == "google" and not self.google_key:
             raise ValueError("Google provider selected, but GOOGLE_MAPS_API_KEY is not configured")
-

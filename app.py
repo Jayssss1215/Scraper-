@@ -98,7 +98,7 @@ if page == "New Mission":
         if c1.button("Equipped" if lead_active else "Equip Lead Hunter", disabled=lead_active, use_container_width=True):
             st.session_state["equipped_skill"] = "Lead Hunter"
             st.rerun()
-        c2.markdown(f'<div class="skill-card blueprint"><span class="skill-id">02</span><span class="badge">{"EQUIPPED" if gap_active else "BLUEPRINT"}</span><p><b>Website Gap Hunter</b></p><p>Find active, contactable businesses with no independent website or a weak web presence.</p><span class="capability">VISUAL MODE · ENGINE NEXT</span></div>', unsafe_allow_html=True)
+        c2.markdown(f'<div class="skill-card blueprint"><span class="skill-id">02</span><span class="badge">{"EQUIPPED" if gap_active else "READY"}</span><p><b>Website Gap Hunter</b></p><p>Find public OpenStreetMap business records with no independent website listed.</p><span class="capability">$0 DISCOVERY · ENGINE ONLINE</span></div>', unsafe_allow_html=True)
         if c2.button("Equipped" if gap_active else "Equip Gap Hunter", disabled=gap_active, use_container_width=True):
             st.session_state["equipped_skill"] = "Website Gap Hunter"
             st.rerun()
@@ -106,20 +106,21 @@ if page == "New Mission":
     with right:
         gap_mode = equipped_skill == "Website Gap Hunter"
         st.subheader("New Website Gap Mission" if gap_mode else "New Mission")
-        st.caption("The Website Gap engine is the next build step. You can equip and preview it now." if gap_mode else "The Training Ground uses bundled sample records. Try “cafe” and “Fitzroy”.")
+        st.caption("$0 prototype: central and inner Melbourne florists. Missing website data is a lead signal, not proof." if gap_mode else "The Training Ground uses bundled sample records. Try “cafe” and “Fitzroy”.")
         with st.form("mission"):
-            business_type = st.text_input("Business type", value="cafe", placeholder="e.g. cafe")
-            location = st.text_input("Suburb, city or postcode", value="Fitzroy", placeholder="e.g. Fitzroy")
+            business_type = st.text_input("Business type", value="florist" if gap_mode else "cafe", placeholder="e.g. florist")
+            location = st.text_input("Suburb, city or postcode", value="Melbourne" if gap_mode else "Fitzroy", placeholder="e.g. Melbourne")
             result_limit = st.slider("Maximum leads", 1, settings.max_results, min(10, settings.max_results))
             rule = st.text_area("Optional targeting rule", placeholder="Use only when judgement is needed, e.g. independent cafes suitable for a website redesign")
             ai_ready = settings.ai_enabled and bool(settings.openrouter_key)
-            st.markdown(f'''<div class="brief"><span class="badge">MISSION BRIEF</span><p><b>Equipped:</b> {equipped_skill}<br><b>Provider:</b> {settings.lead_provider.title()} · <b>Provider calls:</b> up to {0 if gap_mode else 1} of {settings.max_provider_requests}<br><b>Scout Brain:</b> {'online' if ai_ready else 'offline — deterministic filters only'} · <b>AI calls:</b> up to {min(result_limit, settings.max_llm_classifications) if ai_ready and rule and not gap_mode else 0}</p></div>''', unsafe_allow_html=True)
-            submitted = st.form_submit_button("Engine coming next" if gap_mode else "Start Mission  →", type="primary", use_container_width=True, disabled=gap_mode)
+            active_provider = "OpenStreetMap" if gap_mode else settings.lead_provider.title()
+            st.markdown(f'''<div class="brief"><span class="badge">MISSION BRIEF</span><p><b>Equipped:</b> {equipped_skill}<br><b>Provider:</b> {active_provider} · <b>Provider calls:</b> up to 1 of {settings.max_provider_requests}<br><b>Scout Brain:</b> {'online' if ai_ready and not gap_mode else 'offline — deterministic filters only'} · <b>AI calls:</b> up to {min(result_limit, settings.max_llm_classifications) if ai_ready and rule and not gap_mode else 0}</p></div>''', unsafe_allow_html=True)
+            submitted = st.form_submit_button("Find website gaps  →" if gap_mode else "Start Mission  →", type="primary", use_container_width=True)
         if submitted:
             try:
                 request = MissionRequest(business_type=business_type, location=location, result_limit=result_limit, targeting_rule=rule)
                 with st.spinner("Lead Hunter is scanning approved sources…"):
-                    _, leads, llm_calls = run_mission(request, settings, db)
+                    _, leads, llm_calls = run_mission(request, settings, db, provider_name="osm" if gap_mode else None)
                 st.session_state["results"] = [lead.model_dump() for lead in leads]
                 if leads:
                     usable = sum(bool(x.business_name and x.address) for x in leads)
@@ -138,14 +139,16 @@ elif page == "Mission Results":
     else:
         st.subheader("Mission Results")
         source = pd.DataFrame(rows)
-        f1, f2, f3, f4 = st.columns(4)
+        f1, f2, f3, f4, f5 = st.columns(5)
         has_phone = f1.checkbox("Has phone")
         has_website = f2.checkbox("Has website")
-        fits = f3.multiselect("Fit", ["match", "not a match", "uncertain", "not assessed"])
-        search = f4.text_input("Search", placeholder="Name, address, category")
+        missing_website = f3.checkbox("No website listed")
+        fits = f4.multiselect("Fit", ["match", "not a match", "uncertain", "not assessed"])
+        search = f5.text_input("Search", placeholder="Name or area")
         visible = source.copy()
         if has_phone: visible = visible[visible["phone"].notna() & (visible["phone"] != "")]
         if has_website: visible = visible[visible["website"].notna() & (visible["website"] != "")]
+        if missing_website: visible = visible[visible["website"].isna() | (visible["website"] == "")]
         if fits: visible = visible[visible["fit"].isin(fits)]
         if search:
             blob = visible[["business_name", "address", "category"]].fillna("").agg(" ".join, axis=1)
