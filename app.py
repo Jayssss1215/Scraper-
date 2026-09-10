@@ -1,0 +1,171 @@
+from pathlib import Path
+
+import pandas as pd
+import streamlit as st
+
+from src.config import Settings
+from src.db import Database
+from src.exporters import leads_csv
+from src.missions import run_mission
+from src.models import Lead, MissionRequest
+from src.providers.base import ProviderError
+from src.scoring import lead_xp
+from src.services.deduplicate import lead_key
+
+st.set_page_config(page_title="Jay's AI Control Room", page_icon="◈", layout="wide")
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap');
+:root{--ink:#071017;--panel:#0d1a22;--line:#223946;--teal:#42f5d4;--blue:#61a7ff;--muted:#8da3ad;--cream:#e8f2f0}
+.stApp{background:radial-gradient(circle at 82% 8%,rgba(27,107,120,.22),transparent 28%),linear-gradient(135deg,#071017,#0a141c 58%,#071017);color:var(--cream);font-family:'Manrope',sans-serif}
+h1,h2,h3,[data-testid="stMetricValue"]{font-family:'Chakra Petch',sans-serif!important;letter-spacing:.02em}
+h1{font-size:clamp(2.4rem,5vw,4.8rem)!important;line-height:.9!important;max-width:780px}.stCaption{color:var(--muted)!important}
+[data-testid="stSidebar"]{background:#09131a;border-right:1px solid var(--line)}
+[data-testid="stMetric"]{background:linear-gradient(145deg,rgba(18,39,49,.95),rgba(10,24,31,.95));border:1px solid var(--line);padding:1rem;border-radius:4px;box-shadow:inset 3px 0 var(--teal)}
+.hero-kicker{font:600 .72rem 'Chakra Petch';letter-spacing:.22em;color:var(--teal);text-transform:uppercase;margin-top:1rem}
+.hero-rule{height:1px;background:linear-gradient(90deg,var(--teal),transparent);margin:1.4rem 0 2rem}
+.agent-card,.locked-card,.brief{border:1px solid var(--line);background:linear-gradient(150deg,rgba(16,34,43,.92),rgba(8,20,27,.92));padding:1.25rem;border-radius:5px;position:relative;overflow:hidden}
+.agent-card:after{content:'01';position:absolute;right:14px;top:3px;font:700 4rem 'Chakra Petch';color:rgba(66,245,212,.06)}
+.badge{display:inline-block;border:1px solid #37606e;color:var(--teal);font:600 .7rem 'Chakra Petch';padding:.25rem .5rem;letter-spacing:.12em;text-transform:uppercase}
+.locked-card{opacity:.55;min-height:122px}.locked-card b{font-family:'Chakra Petch'}
+.xp-track{height:8px;background:#172934;margin:.75rem 0}.xp-fill{height:100%;background:linear-gradient(90deg,var(--teal),var(--blue));box-shadow:0 0 18px rgba(66,245,212,.45)}
+.brief{border-left:3px solid var(--blue);margin:.5rem 0 1.5rem}.missing{color:#f1b667}.stButton>button,.stDownloadButton>button{border-radius:3px!important;border:1px solid #3b6b75!important;font-family:'Chakra Petch'!important;font-weight:600!important}
+div[data-testid="stDataFrame"]{border:1px solid var(--line)}
+@media (prefers-reduced-motion:no-preference){.block-container{animation:enter .55s ease both}@keyframes enter{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}}
+</style>
+""", unsafe_allow_html=True)
+
+try:
+    settings = Settings()
+    db = Database(settings.database_path)
+except ValueError as exc:
+    st.error(f"Settings need attention: {exc}")
+    st.stop()
+
+
+def display_value(value):
+    return value if value not in (None, "") else "Not available"
+
+
+def row_to_lead(row):
+    return Lead(**{k: row.get(k) for k in Lead.model_fields})
+
+
+with st.sidebar:
+    st.markdown("### ◈ CONTROL ROOM")
+    page = st.radio("Station", ["New Mission", "Mission Results", "Lead Vault", "Settings / Gear"], label_visibility="collapsed")
+    st.divider()
+    st.caption("LOCAL SYSTEM · HUMAN REVIEW REQUIRED")
+    st.caption("No outreach is performed by this app.")
+
+saved_rows = db.rows(saved_only=True)
+saved_leads = [row_to_lead(row) for row in saved_rows]
+xp = sum(lead_xp(lead) for lead in saved_leads)
+level = 1 + xp // 250
+progress = xp % 250
+
+st.markdown('<div class="hero-kicker">Jay’s AI · Local lead intelligence</div>', unsafe_allow_html=True)
+st.title("MISSION CONTROL")
+st.caption("Find public business leads. Review every result. Keep the useful ones.")
+st.markdown('<div class="hero-rule"></div>', unsafe_allow_html=True)
+
+if page == "New Mission":
+    left, right = st.columns([1, 1.75], gap="large")
+    with left:
+        st.markdown(f'''<div class="agent-card"><span class="badge">LEVEL {level}</span><h2>Jay's AI</h2><p>Equipped skill</p><h3>◈ Lead Hunter</h3><div class="xp-track"><div class="xp-fill" style="width:{progress/2.5}%"></div></div><small>{progress} / 250 XP to next level · {xp} total XP</small></div>''', unsafe_allow_html=True)
+        st.markdown("#### Skill rack")
+        c1, c2 = st.columns(2)
+        c1.markdown('<div class="locked-card"><span class="badge">LOCKED</span><p><b>Signal Scout</b></p><small>Coming later</small></div>', unsafe_allow_html=True)
+        c2.markdown('<div class="locked-card"><span class="badge">LOCKED</span><p><b>Outreach Wing</b></p><small>Coming later</small></div>', unsafe_allow_html=True)
+    with right:
+        st.subheader("New Mission")
+        st.caption("The Training Ground uses bundled sample records. Try “cafe” and “Fitzroy”.")
+        with st.form("mission"):
+            business_type = st.text_input("Business type", value="cafe", placeholder="e.g. cafe")
+            location = st.text_input("Suburb, city or postcode", value="Fitzroy", placeholder="e.g. Fitzroy")
+            result_limit = st.slider("Maximum leads", 1, settings.max_results, min(10, settings.max_results))
+            rule = st.text_area("Optional targeting rule", placeholder="Use only when judgement is needed, e.g. independent cafes suitable for a website redesign")
+            ai_ready = settings.ai_enabled and bool(settings.openrouter_key)
+            st.markdown(f'''<div class="brief"><span class="badge">MISSION BRIEF</span><p><b>Provider:</b> {settings.lead_provider.title()} · <b>Provider calls:</b> up to 1 of {settings.max_provider_requests}<br><b>Scout Brain:</b> {'online' if ai_ready else 'offline — deterministic filters only'} · <b>AI calls:</b> up to {min(result_limit, settings.max_llm_classifications) if ai_ready and rule else 0}</p></div>''', unsafe_allow_html=True)
+            submitted = st.form_submit_button("Start Mission  →", type="primary", use_container_width=True)
+        if submitted:
+            try:
+                request = MissionRequest(business_type=business_type, location=location, result_limit=result_limit, targeting_rule=rule)
+                with st.spinner("Lead Hunter is scanning approved sources…"):
+                    _, leads, llm_calls = run_mission(request, settings, db)
+                st.session_state["results"] = [lead.model_dump() for lead in leads]
+                if leads:
+                    usable = sum(bool(x.business_name and x.address) for x in leads)
+                    st.success(f"Mission complete: {len(leads)} leads found, {usable} usable. Scout Brain calls: {llm_calls}.")
+                else:
+                    st.info("No matching leads were found. Try a broader business type or location. No facts were invented.")
+            except (ValueError, ProviderError) as exc:
+                st.error(str(exc))
+
+elif page == "Mission Results":
+    rows = st.session_state.get("results")
+    if rows is None:
+        rows = db.rows()
+    if not rows:
+        st.info("No mission results yet. Start with a fixture mission from New Mission.")
+    else:
+        st.subheader("Mission Results")
+        source = pd.DataFrame(rows)
+        f1, f2, f3, f4 = st.columns(4)
+        has_phone = f1.checkbox("Has phone")
+        has_website = f2.checkbox("Has website")
+        fits = f3.multiselect("Fit", ["match", "not a match", "uncertain", "not assessed"])
+        search = f4.text_input("Search", placeholder="Name, address, category")
+        visible = source.copy()
+        if has_phone: visible = visible[visible["phone"].notna() & (visible["phone"] != "")]
+        if has_website: visible = visible[visible["website"].notna() & (visible["website"] != "")]
+        if fits: visible = visible[visible["fit"].isin(fits)]
+        if search:
+            blob = visible[["business_name", "address", "category"]].fillna("").agg(" ".join, axis=1)
+            visible = visible[blob.str.contains(search, case=False, regex=False)]
+        options = {}
+        for _, row in visible.iterrows():
+            lead = row_to_lead(row.to_dict())
+            options[f"{lead.business_name} — {display_value(lead.address)}"] = lead_key(lead)
+        selected = st.multiselect("Select leads to save", list(options), placeholder="Choose one or more leads")
+        shown = visible.copy()
+        for col in ("phone", "address", "website", "category", "classification_reason"):
+            if col in shown: shown[col] = shown[col].fillna("Not available")
+        cols = [c for c in ["business_name", "phone", "address", "website", "category", "fit", "classification_reason", "provider", "retrieved_at"] if c in shown]
+        st.dataframe(shown[cols], use_container_width=True, hide_index=True, column_config={"website": st.column_config.LinkColumn("Website")})
+        b1, b2 = st.columns(2)
+        if b1.button("Save selected to Vault", type="primary", use_container_width=True):
+            db.save_keys([options[item] for item in selected])
+            gain = sum(lead_xp(row_to_lead(row.to_dict())) for _, row in visible.iterrows() if lead_key(row_to_lead(row.to_dict())) in [options[item] for item in selected])
+            st.success(f"{len(selected)} lead(s) saved. +{gain} XP for newly usable selections; duplicates never earn twice.")
+        export_leads = [row_to_lead(row.to_dict()) for _, row in visible.iterrows() if not selected or lead_key(row_to_lead(row.to_dict())) in [options[item] for item in selected]]
+        b2.download_button("Export selected" if selected else "Export visible results", leads_csv(export_leads), "mission-leads.csv", "text/csv", use_container_width=True)
+
+elif page == "Lead Vault":
+    st.subheader("Lead Vault")
+    st.caption(f"{len(saved_rows)} unique saved leads · {xp} XP. XP: +10 for name + address, +5 with phone or website.")
+    if not saved_rows:
+        st.info("The vault is empty. Save reviewed leads from Mission Results.")
+    for row in saved_rows:
+        with st.expander(f"{row['business_name']} · {row['user_status']}"):
+            st.write(f"**Phone:** {display_value(row['phone'])}  \n**Address:** {display_value(row['address'])}  \n**Website:** {display_value(row['website'])}  \n**Found by:** {row['mission_query']} in {row['mission_location']}")
+            status = st.selectbox("Status", ["new", "reviewing", "qualified", "not suitable"], index=["new", "reviewing", "qualified", "not suitable"].index(row["user_status"]), key=f"status_{row['id']}")
+            notes = st.text_area("Notes", row["notes"], key=f"notes_{row['id']}")
+            if st.button("Save changes", key=f"save_{row['id']}"):
+                db.update_saved(row["id"], status, notes); st.success("Vault entry updated.")
+            confirm = st.checkbox("Confirm removal", key=f"confirm_{row['id']}")
+            if st.button("Remove from Vault", disabled=not confirm, key=f"delete_{row['id']}"):
+                db.delete_saved(row["id"]); st.rerun()
+    if saved_leads:
+        st.download_button("Export Vault to CSV", leads_csv(saved_leads), "lead-vault.csv", "text/csv")
+
+else:
+    st.subheader("Settings / Gear")
+    g1, g2, g3 = st.columns(3)
+    g1.metric("Lead provider", settings.lead_provider.title())
+    g2.metric("Provider key", "Configured" if settings.google_key else "Not configured")
+    g3.metric("Scout Brain", "Online" if settings.ai_enabled and settings.openrouter_key else "Offline")
+    st.markdown(f'''<div class="brief"><b>Mission limits</b><br>Leads: {settings.max_results} · Provider requests: {settings.max_provider_requests} · AI classifications: {settings.max_llm_classifications}<br><br><b>Local storage</b><br>Database: {settings.database_path}<br>Exports are downloaded by your browser. Keys stay in your local <code>.env</code> file and are never displayed.</div>''', unsafe_allow_html=True)
+    if settings.ai_enabled and not settings.openrouter_key:
+        st.warning("AI classification is enabled but no OpenRouter key is configured. Missions will continue with deterministic filters only.")
+
